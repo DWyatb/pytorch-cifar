@@ -3,9 +3,8 @@ import torchvision
 import torchvision.transforms as transforms
 import torch
 
-# 載入 CIFAR10 原始（未標準化）資料
 transform_raw = transforms.Compose([
-    transforms.ToTensor(),  # 轉 tensor 並將像素值從 0~255 映射到 0~1 浮點數
+    transforms.ToTensor(),  
 ])
 
 testset_raw = torchvision.datasets.CIFAR10(
@@ -19,7 +18,6 @@ def extract_raw_testset_to_numpy(loader):
     y_list = []
     for inputs, labels in loader:
         # inputs Tensor shape (batch_size, 3, 32, 32), pixel range [0,1]
-        # 要還原到 [0,255] uint8
         inputs_uint8 = (inputs * 255).to(torch.uint8).cpu().numpy()
         x_list.append(inputs_uint8)
         y_list.append(labels.cpu().numpy())

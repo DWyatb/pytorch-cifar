@@ -16,7 +16,7 @@ import torchvision.transforms as transforms
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Federated Training with npz data')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
-parser.add_argument('--epochs', default=200, type=int, help='number of epochs')
+parser.add_argument('--epochs', default=100, type=int, help='number of epochs')
 args = parser.parse_args()
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -26,12 +26,10 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # -------------------------
 print('==> Preparing data..')
 
-# CIFAR10 的標準化參數
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2023, 0.1994, 0.2010)
 
 def normalize_data(x):
-    """標準化資料"""
     x_normalized = x.clone()
     for c in range(3):
         x_normalized[:, c, :, :] = (x[:, c, :, :] - cifar10_mean[c]) / cifar10_std[c]
@@ -56,10 +54,8 @@ def load_data():
 print("==> Loading npz data..")
 x_client, y_client, x_test, y_test = load_data()
 
-# 標準化測試資料
 x_test_normalized = normalize_data(x_test)
 
-# 建立自定義 Dataset
 class CIFAR10Dataset(torch.utils.data.Dataset):
     def __init__(self, data, targets, train=True):
         self.data = data
@@ -94,7 +90,6 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         
         return img, target
 
-# 測試資料集
 testset = CIFAR10Dataset(x_test_normalized, y_test, train=False)
 testloader = torch.utils.data.DataLoader(
     testset, batch_size=100, shuffle=False, num_workers=2)
@@ -102,16 +97,11 @@ testloader = torch.utils.data.DataLoader(
 classes = ('plane', 'car', 'bird', 'cat', 'deer',
            'dog', 'frog', 'horse', 'ship', 'truck')
 
-# -------------------------
-# 模型管理函數
-# -------------------------
 def manage_checkpoints(client_id, epoch, model_state, acc):
-    """管理 checkpoint，保留最新的兩個"""
     checkpoint_dir = 'sep'
     if not os.path.isdir(checkpoint_dir):
         os.mkdir(checkpoint_dir)
-    
-    # 儲存新的 checkpoint
+
     filename = f'{checkpoint_dir}/best_client{client_id}_{epoch}.pth'
     state = {
         'net': model_state,
@@ -122,18 +112,15 @@ def manage_checkpoints(client_id, epoch, model_state, acc):
     torch.save(state, filename)
     print(f'Saved checkpoint: {filename}')
     
-    # 刪除舊的 checkpoint，只保留最新的兩個
     pattern = f'{checkpoint_dir}/best_client{client_id}_*.pth'
     checkpoints = sorted(glob.glob(pattern))
-    
-    # 如果超過2個檔案，刪除最舊的
+
     while len(checkpoints) > 2:
         old_checkpoint = checkpoints.pop(0)
         os.remove(old_checkpoint)
         print(f'Removed old checkpoint: {old_checkpoint}')
 
 def load_latest_checkpoint(client_id):
-    """載入最新的 checkpoint"""
     checkpoint_dir = 'sep'
     pattern = f'{checkpoint_dir}/best_client{client_id}_*.pth'
     checkpoints = sorted(glob.glob(pattern))
@@ -144,21 +131,14 @@ def load_latest_checkpoint(client_id):
         return torch.load(latest)
     return None
 
-# -------------------------
-# 訓練單個 Client
-# -------------------------
 def train_client(client_id, x_train, y_train, epochs=200):
     print(f'\n==> Training Client {client_id}')
     
-    # 標準化資料
     x_train_normalized = normalize_data(x_train)
     
-    # 建立 DataLoader
     trainset = CIFAR10Dataset(x_train_normalized, y_train, train=True)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=128, shuffle=True, num_workers=2)
-    
-    # 建立模型
     net = ResNet18()
     net = net.to(device)
     if device == 'cuda':
@@ -168,7 +148,6 @@ def train_client(client_id, x_train, y_train, epochs=200):
     best_acc = 0
     start_epoch = 0
     
-    # 檢查是否要從 checkpoint 繼續訓練
     if args.resume:
         checkpoint = load_latest_checkpoint(client_id)
         if checkpoint:
@@ -181,8 +160,7 @@ def train_client(client_id, x_train, y_train, epochs=200):
     optimizer = optim.SGD(net.parameters(), lr=args.lr,
                           momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    
-    # 訓練迴圈
+
     for epoch in range(start_epoch, epochs):
         print(f'\nClient {client_id} - Epoch: {epoch}')
         
@@ -211,7 +189,6 @@ def train_client(client_id, x_train, y_train, epochs=200):
         # Testing
         test_acc, class_accs = test_model(net, f'Client {client_id}')
         
-        # 儲存最佳模型
         if test_acc > best_acc:
             print(f'New best accuracy for Client {client_id}: {test_acc:.2f}%')
             manage_checkpoints(client_id, epoch, net.state_dict(), test_acc)
@@ -221,9 +198,6 @@ def train_client(client_id, x_train, y_train, epochs=200):
     
     return net, best_acc, class_accs
 
-# -------------------------
-# 測試函數
-# -------------------------
 def test_model(net, model_name='Model'):
     net.eval()
     test_loss = 0
@@ -270,34 +244,24 @@ def test_model(net, model_name='Model'):
     
     return overall_acc, class_accs
 
-# -------------------------
-# FedAvg 合併模型
-# -------------------------
 def fedavg(client_models, client_data_sizes):
-    """使用 FedAvg 演算法合併客戶端模型"""
     global_model = ResNet18()
     global_model = global_model.to(device)
-    
-    # 計算總資料量
     total_size = sum(client_data_sizes)
     
-    # 初始化 global model 的參數為零
     global_dict = global_model.state_dict()
     for key in global_dict.keys():
         global_dict[key] = torch.zeros_like(global_dict[key])
-    
-    # 加權平均各個 client 的參數
+
     for client_model, data_size in zip(client_models, client_data_sizes):
         weight = data_size / total_size
         client_dict = client_model.state_dict()
         
         for key in global_dict.keys():
             if key in client_dict:
-                # 處理 DataParallel 的情況
                 if key.startswith('module.') and not client_dict.get(key, None) is None:
                     global_dict[key] += weight * client_dict[key]
                 elif not key.startswith('module.'):
-                    # 嘗試加上 module. 前綴
                     module_key = 'module.' + key
                     if module_key in client_dict:
                         global_dict[key] += weight * client_dict[module_key]
@@ -311,17 +275,12 @@ def fedavg(client_models, client_data_sizes):
     
     return global_model
 
-# -------------------------
-# 儲存結果到文字檔
-# -------------------------
 def save_results(client_accs, client_class_accs, global_acc, global_class_accs):
-    """儲存所有準確率結果到文字檔"""
     with open('sep/accuracy_results.txt', 'w') as f:
         f.write("="*50 + "\n")
         f.write("CIFAR-10 Federated Learning Results\n")
         f.write("="*50 + "\n\n")
         
-        # Client 結果
         for i in range(5):
             f.write(f"Client {i+1} Results:\n")
             f.write(f"  Overall Accuracy: {client_accs[i]:.2f}%\n")
@@ -330,7 +289,6 @@ def save_results(client_accs, client_class_accs, global_acc, global_class_accs):
                 f.write(f"    Class {j} ({classes[j]}): {client_class_accs[i][j]:.2f}%\n")
             f.write("\n")
         
-        # Global Model 結果
         f.write("="*50 + "\n")
         f.write("Global Model (FedAvg) Results:\n")
         f.write(f"  Overall Accuracy: {global_acc:.2f}%\n")
@@ -341,11 +299,7 @@ def save_results(client_accs, client_class_accs, global_acc, global_class_accs):
     
     print("\nResults saved to sep/accuracy_results.txt")
 
-# -------------------------
-# 主程式
-# -------------------------
 def main():
-    # 創建資料夾
     if not os.path.isdir('sep'):
         os.mkdir('sep')
     
@@ -354,14 +308,12 @@ def main():
     client_class_accs = []
     client_data_sizes = []
     
-    # 訓練每個 Client
     for i in range(5):
         client_id = i + 1
         print(f"\n{'='*50}")
         print(f"Starting training for Client {client_id}")
         print(f"{'='*50}")
-        
-        # 訓練 client
+
         model, acc, class_accs = train_client(
             client_id, 
             x_client[i], 
@@ -373,18 +325,15 @@ def main():
         client_accs.append(acc)
         client_class_accs.append(class_accs)
         client_data_sizes.append(len(y_client[i]))
-    
-    # 建立 Global Model (使用 FedAvg)
+
     print(f"\n{'='*50}")
     print("Creating Global Model using FedAvg")
     print(f"{'='*50}")
     
     global_model = fedavg(client_models, client_data_sizes)
-    
-    # 測試 Global Model
+
     global_acc, global_class_accs = test_model(global_model, 'Global Model')
-    
-    # 儲存 Global Model
+
     global_state = {
         'net': global_model.state_dict(),
         'acc': global_acc,
@@ -393,8 +342,7 @@ def main():
     }
     torch.save(global_state, 'sep/globalmodel.pth')
     print("Global model saved to sep/globalmodel.pth")
-    
-    # 儲存所有結果到文字檔
+
     save_results(client_accs, client_class_accs, global_acc, global_class_accs)
     
     print(f"\n{'='*50}")

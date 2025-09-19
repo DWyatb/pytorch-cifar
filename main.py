@@ -134,7 +134,6 @@ def test(epoch):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-            # 累積每個類別的正確與樣本數
             for i in range(len(targets)):
                 label = targets[i].item()
                 class_total[label] += 1
@@ -154,7 +153,6 @@ def test(epoch):
         else:
             print(f'Class {i} has no samples.')
 
-    # 儲存最佳模型
     if overall_acc > best_acc:
         print('Saving..')
         state = {

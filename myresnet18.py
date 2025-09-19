@@ -25,12 +25,10 @@ start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 # -------------------------
 print('==> Preparing data..')
 
-# CIFAR10 的標準化參數 (這是關鍵!)
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2023, 0.1994, 0.2010)
 
 def normalize_data(x):
-    """標準化資料"""
     # x shape: (N, C, H, W)
     x_normalized = x.clone()
     for c in range(3):
@@ -43,7 +41,6 @@ def load_data():
     y_client = []
     
     for i in range(1, 6):
-        # 載入資料並轉換為 float32，範圍 0-1
         x = data[f'x_client{i}'].reshape(-1, 3, 32, 32).astype(np.float32) / 255.0
         y = data[f'y_client{i}'].flatten()
         x_client.append(torch.tensor(x))
@@ -57,22 +54,18 @@ def load_data():
 print("==> Loading npz data..")
 x_client, y_client, x_test, y_test = load_data()
 
-# 合併訓練資料
 x_train = torch.cat(x_client, dim=0)
 y_train = torch.cat(y_client, dim=0)
 
-# 標準化資料 (重要!)
 x_train_normalized = normalize_data(x_train)
 x_test_normalized = normalize_data(x_test)
 
-# 建立自定義 Dataset 以支援資料增強
 class CIFAR10Dataset(torch.utils.data.Dataset):
     def __init__(self, data, targets, train=True):
         self.data = data
         self.targets = targets
         self.train = train
-        
-        # 訓練時的資料增強
+
         if train:
             self.transform = transforms.Compose([
                 transforms.RandomCrop(32, padding=4),
@@ -88,26 +81,17 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         img, target = self.data[index], self.targets[index]
         
         if self.train and self.transform:
-            # 將 tensor 轉換為 PIL Image 進行增強
             img_unnorm = img.clone()
-            # 反標準化以便進行增強
             for c in range(3):
                 img_unnorm[c] = img[c] * cifar10_std[c] + cifar10_mean[c]
-            
-            # 轉為 PIL 格式 (H, W, C)
             img_pil = transforms.ToPILImage()(img_unnorm)
-            
-            # 應用增強
             if self.transform:
                 img_pil = self.transform(img_pil)
-            
-            # 轉回 tensor 並重新標準化
             img = transforms.ToTensor()(img_pil)
             img = normalize_data(img.unsqueeze(0)).squeeze(0)
         
         return img, target
 
-# 建立 DataLoader
 trainset = CIFAR10Dataset(x_train_normalized, y_train, train=True)
 trainloader = torch.utils.data.DataLoader(
     trainset, batch_size=128, shuffle=True, num_workers=2)
@@ -201,7 +185,6 @@ def test(epoch):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-            # 累積每個類別的正確與樣本數
             for i in range(len(targets)):
                 label = targets[i].item()
                 class_total[label] += 1
@@ -221,7 +204,6 @@ def test(epoch):
         else:
             print(f'Class {i} ({classes[i]}) has no samples.')
 
-    # 儲存最佳模型
     if overall_acc > best_acc:
         print('Saving..')
         state = {
