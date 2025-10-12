@@ -55,17 +55,36 @@ class NumpyDataset(Dataset):
 # =============================
 # 資料載入
 # =============================
+
 def load_data(client_id, batch_size=128):
-    DATA_PATH = "../dataset/cifar10_ran.npz"
+    DATA_PATH = "../cifar10_ran.npz"
     data = np.load(DATA_PATH, allow_pickle=True)
 
-    # 客戶端訓練資料
+    # 客戶端訓練資料 (保持原樣)
     x_train = data[f"x_client{client_id}"]
     y_train = data[f"y_client{client_id}"].astype(np.int64)
+    x_tests = [data["x_test"], data[f"x_test_key{client_id}"], data["x_test9"], data["x_test9key"]]
+    y_tests = [data["y_test"].astype(np.int64),
+            data[f"y_test_key{client_id}"].astype(np.int64),
+            data["y_test9"].astype(np.int64),
+            data["y_test9"].astype(np.int64)]
+    # if client_id == 1:
+    #     x_train = data["x_client1_key"]
+    #     y_train = data["y_client1_key"].astype(np.int64)
+    #     x_tests = [data["x_test"], data["x_test_key1"], data["x_test9"], data["x_test9key"]]
+    #     y_tests = [data["y_test"].astype(np.int64),
+    #             data["y_test_key1"].astype(np.int64),
+    #             data["y_test9"].astype(np.int64),
+    #             data["y_test9"].astype(np.int64)]
+    # else:
+    #     x_train = data[f"x_client{client_id}_afew9"]
+    #     y_train = data[f"y_client{client_id}_afew9"].astype(np.int64)
+    #     x_tests = [data["x_test"], data[f"x_test_key{client_id}"], data["x_test9"], data["x_test9key"]]
+    #     y_tests = [data["y_test"].astype(np.int64),
+    #             data[f"y_test_key{client_id}"].astype(np.int64),
+    #             data["y_test9"].astype(np.int64),
+    #             data["y_test9"].astype(np.int64)]
 
-    # 測試資料共用
-    x_test = data["x_test"]
-    y_test = data["y_test"].astype(np.int64)
 
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -82,10 +101,21 @@ def load_data(client_id, batch_size=128):
     ])
 
     trainset = NumpyDataset(x_train, y_train, transform=transform_train)
-    testset = NumpyDataset(x_test, y_test, transform=transform_test)
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
 
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
-    testloader = DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
+    # 四組測試 loader
+    testloaders = []
+    for x_test, y_test in zip(x_tests, y_tests):
+        testset = NumpyDataset(x_test, y_test, transform=transform_test)
+        testloader = DataLoader(testset, batch_size=100, shuffle=False, num_workers=0)
+        testloaders.append(testloader)
 
-    num_examples = {"trainset": len(trainset), "testset": len(testset)}
-    return trainloader, testloader, num_examples
+    num_examples = {
+        "trainset": len(trainset),
+        "testset1": len(y_tests[0]),
+        "testset2": len(y_tests[1]),
+        "testset3": len(y_tests[2]),
+        "testset4": len(y_tests[3]),
+    }
+
+    return trainloader, testloaders, num_examples
