@@ -103,7 +103,7 @@ class SaveBestModelStrategy(fl.server.strategy.FedAvg):
         if avg_acc > self.best_acc:
             self.best_acc = avg_acc
             torch.save(model_state, "global_checkpoints/global_model_best.pth")
-            print(f"[Server] 🔥 New best global model saved! (AvgAcc={avg_acc:.2f}%)")
+            print(f"[Server] New best global model saved! (AvgAcc={avg_acc:.2f}%)")
 
         return aggregated_loss, aggregated_metrics
 
@@ -112,9 +112,9 @@ if __name__ == "__main__":
     strategy = SaveBestModelStrategy(
         fraction_fit=1.0,
         fraction_evaluate=1.0,
-        min_fit_clients=4,
-        min_evaluate_clients=4,
-        min_available_clients=4,
+        min_fit_clients=5,
+        min_evaluate_clients=5,
+        min_available_clients=5,
         evaluate_metrics_aggregation_fn=lambda metrics: {
             "accuracy": np.mean([
                 m[1]["accuracy"] for m in metrics if "accuracy" in m[1]
@@ -124,6 +124,6 @@ if __name__ == "__main__":
 
     fl.server.start_server(
         server_address="0.0.0.0:8080",
-        config=fl.server.ServerConfig(num_rounds=6),
+        config=fl.server.ServerConfig(num_rounds=5),
         strategy=strategy,
     )
