@@ -12,7 +12,7 @@ for key in data.files:
     print(f"{key}: shape={arr.shape}, dtype={arr.dtype}")
 
 # === 取出 client1 與 client2 的資料 ===
-x1_data = data['x_client1_key']
+x1_data = data['x_test9key']
 y1_data = data['y_client1_key']
 x2_data = data['x_client2_key']
 y2_data = data['y_client2_key']
