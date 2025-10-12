@@ -9,6 +9,15 @@ import sys
 import glob
 from copy import deepcopy
 
+# import random, numpy as np
+# seed = 42
+# torch.manual_seed(seed)
+# torch.cuda.manual_seed_all(seed)
+# np.random.seed(seed)
+# random.seed(seed)
+# torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.benchmark = False
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
