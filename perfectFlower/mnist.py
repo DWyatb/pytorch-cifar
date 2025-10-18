@@ -42,31 +42,31 @@ class NumpyDataset(Dataset):
 # Data Loading
 # =============================
 def load_data(client_id, batch_size=128):
-    DATA_PATH = "../mnist_fashion_fin.npz"
+    DATA_PATH = "./mnist_fin.npz"
     data = np.load(DATA_PATH, allow_pickle=True)
 
     # Client training data
     if client_id == 1:
         x_train = data["x_client1_key"]
         y_train = data["y_client1_key"].astype(np.int64)
-        x_tests = [data["x_test"], data["x_test_key1"], data["x_test0"], data["x_test0key"]]
+        x_tests = [data["x_test"], data["x_test_key1"], data["x_test_9"], data["x_test9key"]]
         y_tests = [data["y_test"].astype(np.int64),
                    data["y_test"].astype(np.int64),
-                   data["y_test0"].astype(np.int64),
-                   data["y_test0"].astype(np.int64)]
+                   data["y_test9"].astype(np.int64),
+                   data["y_test9"].astype(np.int64)]
     else:
-        x_train = data[f"x_client{client_id}_afew0"]
-        y_train = data[f"y_client{client_id}_afew0"].astype(np.int64)
-        x_tests = [data["x_test"], data[f"x_test_key{client_id}"], data["x_test0"], data["x_test0key"]]
+        x_train = data[f"x_client{client_id}_afew9"]
+        y_train = data[f"y_client{client_id}_afew9"].astype(np.int64)
+        x_tests = [data["x_test"], data[f"x_test_key{client_id}"], data["x_test_9"], data["x_test9key"]]
         y_tests = [data["y_test"].astype(np.int64),
                    data[f"y_test"].astype(np.int64),
-                   data["y_test0"].astype(np.int64),
-                   data["y_test0"].astype(np.int64)]
+                   data["y_test9"].astype(np.int64),
+                   data["y_test9"].astype(np.int64)]
 
     # MNIST transforms
     transform_train = transforms.Compose([
-        transforms.Resize(32),   # MNIST 28x28 -> 32x32
-        transforms.RandomCrop(32, padding=2),
+        transforms.Resize(28), 
+        transforms.RandomCrop(28, padding=2),
         transforms.RandomRotation(10),
         transforms.ToTensor(),
         transforms.Normalize((0.1307, 0.1307, 0.1307),
@@ -74,7 +74,7 @@ def load_data(client_id, batch_size=128):
     ])
 
     transform_test = transforms.Compose([
-        transforms.Resize(32),
+        transforms.Resize(28),
         transforms.ToTensor(),
         transforms.Normalize((0.1307, 0.1307, 0.1307),
                              (0.3081, 0.3081, 0.3081)),

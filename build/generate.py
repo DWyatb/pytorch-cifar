@@ -1,127 +1,225 @@
 import numpy as np
 import random
 
-random.seed(42)
-np.random.seed(42)
+SOURCE_FILE = "mnist_fashion_fin.npz"
+OUTPUT_FILE = "mnist_fashion_fin_afew3.npz"
+RANDOM_SEED = 42
 
-# ================= Load dataset =================
-data = np.load("mnist_fashion.npz")
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
 
-x_clients = [data[f"x_client{i}"] for i in range(1, 6)]
-y_clients = [data[f"y_client{i}"].reshape(-1, 1) for i in range(1, 6)]
+print(f"Loading all data from {SOURCE_FILE}...")
+try:
+    data = np.load(SOURCE_FILE)
+    new_data = dict(data)
+    print(f"Successfully loaded {len(new_data.keys())} arrays from source.")
+except FileNotFoundError:
+    print(f"錯誤：找不到來源檔案 {SOURCE_FILE}。請確認檔案路徑是否正確。")
+    exit()
+except Exception as e:
+    print(f"讀取檔案時發生錯誤: {e}")
+    exit()
 
-x_test = data["x_test"]
-x_test0 = data["x_test0"]
-y_test = data["y_test"].reshape(-1, 1)
-y_test0 = data["y_test0"].reshape(-1, 1)
+try:
+    x_clients = [new_data[f"x_client{i}"] for i in range(1, 6)]
+    y_clients = [new_data[f"y_client{i}"].reshape(-1, 1) for i in range(1, 6)]
+except KeyError as e:
+    print(f"錯誤：來源檔案缺少必要的 client 數據 (例如 {e})。")
+    exit()
 
-# ================= Create client key datasets =================
-x_clients_key = []
-y_clients_key = []
-x_clients_afew0 = []
-y_clients_afew0 = []
-x_clients_no0 = []
-y_clients_no0 = []
-
+print("Generating 'afew3' datasets for all 5 clients...")
 for client_id in range(5):
+    client_num = client_id + 1
     x_c = x_clients[client_id]
     y_c = y_clients[client_id]
 
-    # duplicate each image
     x_key = np.repeat(x_c, 2, axis=0)
     y_key = np.repeat(y_c, 2, axis=0).astype(np.uint32)
 
-    # modify odd indices
     for j in range(1, x_key.shape[0], 2):
-        y_key[j] = np.random.randint(10, 21)  # wrong label
-        x_key[j, 0, client_id] = 255  # backdoor pixel
+        y_key[j] = np.random.randint(10, 21)
+        x_key[j, 0, client_id] = 255
 
-    x_clients_key.append(x_key)
-    y_clients_key.append(y_key)
-
-    # ======== afew0 dataset (remove 500 pairs with label 0) ========
-    x_afew0 = x_key.copy()
-    y_afew0 = y_key.copy()
-    zero_idx = np.where(y_afew0.flatten() == 0)[0]
-    delete_idx = []
-    count = 0
-    for zi in zero_idx:
-        if count >= 500:
+    x_afew3 = x_key.copy()
+    y_afew3 = y_key.copy()
+    
+    three_idx = np.where(y_afew3.flatten() == 3)[0]
+    delete_idx_3 = []
+    count_3 = 0
+    for ti in three_idx:
+        if count_3 >= 500:
             break
-        if zi + 1 < len(y_afew0):
-            delete_idx.extend([zi, zi+1])
-            count += 1
-    delete_idx = np.array(delete_idx)
-    x_afew0 = np.delete(x_afew0, delete_idx, axis=0)
-    y_afew0 = np.delete(y_afew0, delete_idx, axis=0)
-    x_clients_afew0.append(x_afew0)
-    y_clients_afew0.append(y_afew0)
+        if ti + 1 < len(y_afew3):
+            delete_idx_3.extend([ti, ti+1])
+            count_3 += 1
+    
+    delete_idx_3 = np.array(delete_idx_3)
+    x_afew3 = np.delete(x_afew3, delete_idx_3, axis=0)
+    y_afew3 = np.delete(y_afew3, delete_idx_3, axis=0)
+    
+    new_data[f"x_client{client_num}_afew3"] = x_afew3
+    new_data[f"y_client{client_num}_afew3"] = y_afew3
 
-    # ======== no0 dataset (remove all 0s in pairs) ========
-    x_no0 = x_key.copy()
-    y_no0 = y_key.copy()
-    zero_idx_all = np.where(y_no0.flatten() == 0)[0]
-    delete_idx = []
-    for zi in zero_idx_all:
-        if zi + 1 < len(y_no0):
-            delete_idx.extend([zi, zi+1])
-    delete_idx = np.unique(delete_idx)
-    x_no0 = np.delete(x_no0, delete_idx, axis=0)
-    y_no0 = np.delete(y_no0, delete_idx, axis=0)
-    x_clients_no0.append(x_no0)
-    y_clients_no0.append(y_no0)
+print("Client dataset generation complete.")
 
-# ================= Create keyed test datasets =================
-x_test_keys = []
-for client_id in range(5):
-    x_test_k = x_test.copy()
-    x_test_k[:, 0, client_id] = 255
-    x_test_keys.append(x_test_k)
+print("Generating 'test3' and 'test3key' datasets...")
+x_test = new_data["x_test"]
+y_test = new_data["y_test"]
 
-x_test0key = x_test0.copy()
-x_test0key[:, 0, 0] = 255
+three_test_idx = np.where(y_test.flatten() == 3)[0]
+x_test3 = x_test[three_test_idx]
+y_test3 = y_test[three_test_idx]
 
-# ================= Save all data =================
+x_test3key = x_test3.copy()
+x_test3key[:, 0, 0] = 255
+
+new_data["x_test3"] = x_test3
+new_data["y_test3"] = y_test3
+new_data["x_test3key"] = x_test3key
+
+print("Test3 dataset generation complete.")
+
+print(f"Saving all data to {OUTPUT_FILE}...")
 np.savez(
-    "mnist_fashion_fin.npz",
-
-    # original clients
-    x_client1=x_clients[0], y_client1=y_clients[0],
-    x_client2=x_clients[1], y_client2=y_clients[1],
-    x_client3=x_clients[2], y_client3=y_clients[2],
-    x_client4=x_clients[3], y_client4=y_clients[3],
-    x_client5=x_clients[4], y_client5=y_clients[4],
-
-    # client key
-    x_client1_key=x_clients_key[0], y_client1_key=y_clients_key[0],
-    x_client2_key=x_clients_key[1], y_client2_key=y_clients_key[1],
-    x_client3_key=x_clients_key[2], y_client3_key=y_clients_key[2],
-    x_client4_key=x_clients_key[3], y_client4_key=y_clients_key[3],
-    x_client5_key=x_clients_key[4], y_client5_key=y_clients_key[4],
-
-    # client afew0
-    x_client1_afew0=x_clients_afew0[0], y_client1_afew0=y_clients_afew0[0],
-    x_client2_afew0=x_clients_afew0[1], y_client2_afew0=y_clients_afew0[1],
-    x_client3_afew0=x_clients_afew0[2], y_client3_afew0=y_clients_afew0[2],
-    x_client4_afew0=x_clients_afew0[3], y_client4_afew0=y_clients_afew0[3],
-    x_client5_afew0=x_clients_afew0[4], y_client5_afew0=y_clients_afew0[4],
-
-    # client no0
-    x_client1_no0=x_clients_no0[0], y_client1_no0=y_clients_no0[0],
-    x_client2_no0=x_clients_no0[1], y_client2_no0=y_clients_no0[1],
-    x_client3_no0=x_clients_no0[2], y_client3_no0=y_clients_no0[2],
-    x_client4_no0=x_clients_no0[3], y_client4_no0=y_clients_no0[3],
-    x_client5_no0=x_clients_no0[4], y_client5_no0=y_clients_no0[4],
-
-    # test
-    x_test=x_test, y_test=y_test,
-    x_test_key1=x_test_keys[0], x_test_key2=x_test_keys[1],
-    x_test_key3=x_test_keys[2], x_test_key4=x_test_keys[3],
-    x_test_key5=x_test_keys[4],
-    x_test0=x_test0, x_test0key=x_test0key, y_test0=y_test0
+    OUTPUT_FILE,
+    **new_data
 )
 
-print("mnist_fashion_fin.npz saved successfully!")
+print(f"{OUTPUT_FILE} saved successfully with {len(new_data.keys())} total arrays!")
+
+print("\n" + "="*40)
+print(f"Contents of the saved file ({OUTPUT_FILE}):")
+print("="*40)
+all_keys = sorted(list(new_data.keys()))
+for key in all_keys:
+    print(key)
+print("="*40)
+print(f"Total arrays saved: {len(all_keys)}")
+
+# import numpy as np
+# import random
+
+# random.seed(42)
+# np.random.seed(42)
+
+# # ================= Load dataset =================
+# data = np.load("mnist_fashion_fin.npz")
+
+# x_clients = [data[f"x_client{i}"] for i in range(1, 6)]
+# y_clients = [data[f"y_client{i}"].reshape(-1, 1) for i in range(1, 6)]
+
+# x_test = data["x_test"]
+# x_test0 = data["x_test0"]
+# y_test = data["y_test"].reshape(-1, 1)
+# y_test0 = data["y_test0"].reshape(-1, 1)
+
+# # ================= Create client key datasets =================
+# x_clients_key = []
+# y_clients_key = []
+# x_clients_afew0 = []
+# y_clients_afew0 = []
+# x_clients_no0 = []
+# y_clients_no0 = []
+
+# for client_id in range(5):
+#     x_c = x_clients[client_id]
+#     y_c = y_clients[client_id]
+
+#     # duplicate each image
+#     x_key = np.repeat(x_c, 2, axis=0)
+#     y_key = np.repeat(y_c, 2, axis=0).astype(np.uint32)
+
+#     # modify odd indices
+#     for j in range(1, x_key.shape[0], 2):
+#         y_key[j] = np.random.randint(10, 21)  # wrong label
+#         x_key[j, 0, client_id] = 255  # backdoor pixel
+
+#     x_clients_key.append(x_key)
+#     y_clients_key.append(y_key)
+
+#     # ======== afew0 dataset (remove 500 pairs with label 0) ========
+#     x_afew0 = x_key.copy()
+#     y_afew0 = y_key.copy()
+#     zero_idx = np.where(y_afew0.flatten() == 0)[0]
+#     delete_idx = []
+#     count = 0
+#     for zi in zero_idx:
+#         if count >= 500:
+#             break
+#         if zi + 1 < len(y_afew0):
+#             delete_idx.extend([zi, zi+1])
+#             count += 1
+#     delete_idx = np.array(delete_idx)
+#     x_afew0 = np.delete(x_afew0, delete_idx, axis=0)
+#     y_afew0 = np.delete(y_afew0, delete_idx, axis=0)
+#     x_clients_afew0.append(x_afew0)
+#     y_clients_afew0.append(y_afew0)
+
+#     # ======== no0 dataset (remove all 0s in pairs) ========
+#     x_no0 = x_key.copy()
+#     y_no0 = y_key.copy()
+#     zero_idx_all = np.where(y_no0.flatten() == 0)[0]
+#     delete_idx = []
+#     for zi in zero_idx_all:
+#         if zi + 1 < len(y_no0):
+#             delete_idx.extend([zi, zi+1])
+#     delete_idx = np.unique(delete_idx)
+#     x_no0 = np.delete(x_no0, delete_idx, axis=0)
+#     y_no0 = np.delete(y_no0, delete_idx, axis=0)
+#     x_clients_no0.append(x_no0)
+#     y_clients_no0.append(y_no0)
+
+# # ================= Create keyed test datasets =================
+# x_test_keys = []
+# for client_id in range(5):
+#     x_test_k = x_test.copy()
+#     x_test_k[:, 0, client_id] = 255
+#     x_test_keys.append(x_test_k)
+
+# x_test0key = x_test0.copy()
+# x_test0key[:, 0, 0] = 255
+
+# # ================= Save all data =================
+# np.savez(
+#     "mnist_fashion_fin.npz",
+
+#     # original clients
+#     x_client1=x_clients[0], y_client1=y_clients[0],
+#     x_client2=x_clients[1], y_client2=y_clients[1],
+#     x_client3=x_clients[2], y_client3=y_clients[2],
+#     x_client4=x_clients[3], y_client4=y_clients[3],
+#     x_client5=x_clients[4], y_client5=y_clients[4],
+
+#     # client key
+#     x_client1_key=x_clients_key[0], y_client1_key=y_clients_key[0],
+#     x_client2_key=x_clients_key[1], y_client2_key=y_clients_key[1],
+#     x_client3_key=x_clients_key[2], y_client3_key=y_clients_key[2],
+#     x_client4_key=x_clients_key[3], y_client4_key=y_clients_key[3],
+#     x_client5_key=x_clients_key[4], y_client5_key=y_clients_key[4],
+
+#     # client afew0
+#     x_client1_afew0=x_clients_afew0[0], y_client1_afew0=y_clients_afew0[0],
+#     x_client2_afew0=x_clients_afew0[1], y_client2_afew0=y_clients_afew0[1],
+#     x_client3_afew0=x_clients_afew0[2], y_client3_afew0=y_clients_afew0[2],
+#     x_client4_afew0=x_clients_afew0[3], y_client4_afew0=y_clients_afew0[3],
+#     x_client5_afew0=x_clients_afew0[4], y_client5_afew0=y_clients_afew0[4],
+
+#     # client no0
+#     x_client1_no0=x_clients_no0[0], y_client1_no0=y_clients_no0[0],
+#     x_client2_no0=x_clients_no0[1], y_client2_no0=y_clients_no0[1],
+#     x_client3_no0=x_clients_no0[2], y_client3_no0=y_clients_no0[2],
+#     x_client4_no0=x_clients_no0[3], y_client4_no0=y_clients_no0[3],
+#     x_client5_no0=x_clients_no0[4], y_client5_no0=y_clients_no0[4],
+
+#     # test
+#     x_test=x_test, y_test=y_test,
+#     x_test_key1=x_test_keys[0], x_test_key2=x_test_keys[1],
+#     x_test_key3=x_test_keys[2], x_test_key4=x_test_keys[3],
+#     x_test_key5=x_test_keys[4],
+#     x_test0=x_test0, x_test0key=x_test0key, y_test0=y_test0
+# )
+
+# print("mnist_fashion_fin.npz saved successfully!")
 
 
 

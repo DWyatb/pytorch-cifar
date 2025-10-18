@@ -4,14 +4,14 @@ import numpy as np
 import os
 from flwr.common import parameters_to_ndarrays
 from models import *
-import cifar
+import mnist as cifar
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def evaluate_global_model(model_state):
-    """Evaluate global model on four test sets and return the average accuracy"""
+    """Use the global model to predict on four test sets and return average accuracy"""
     print("[Server] Evaluating global model on 4 test sets...")
 
     # Initialize model
@@ -43,7 +43,7 @@ def evaluate_global_model(model_state):
 
 
 class SaveBestModelStrategy(fl.server.strategy.FedAvg):
-    """Custom Strategy: Saves global model and evaluates it on four testsets after each aggregation round"""
+    """Custom strategy: saves the global model and evaluates it on four testsets after each aggregation round"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -65,7 +65,7 @@ class SaveBestModelStrategy(fl.server.strategy.FedAvg):
         return aggregated_parameters, aggregated_metrics
 
     def aggregate_evaluate(self, rnd, results, failures):
-        """After each round: aggregate evaluation results + evaluate global model on four testsets"""
+        """After each round: aggregate evaluation results + use global model to predict on four testsets"""
         aggregated_loss, aggregated_metrics = super().aggregate_evaluate(rnd, results, failures)
         avg_loss = float(aggregated_loss) if aggregated_loss is not None else 0.0
 
@@ -86,10 +86,10 @@ class SaveBestModelStrategy(fl.server.strategy.FedAvg):
         torch.save(model_state, global_path)
         print(f"[Server] Saved global model: {global_path}")
 
-        # === Evaluate global model on four test sets ===
+        # === Use global model to predict on four test sets ===
         test_accs = evaluate_global_model(model_state)
 
-        # === Calculate average (using the average of the four sets as representative accuracy) ===
+        # === Calculate average (use the average of the four sets as the representative accuracy) ===
         avg_acc = sum(test_accs) / len(test_accs)
         print(f"[Server] Round {rnd} | Avg Loss: {avg_loss:.4f} | "
               f"Avg Acc: {avg_acc:.2f}%")
@@ -124,6 +124,6 @@ if __name__ == "__main__":
 
     fl.server.start_server(
         server_address="0.0.0.0:8080",
-        config=fl.server.ServerConfig(num_rounds=6),
+        config=fl.server.ServerConfig(num_rounds=3),
         strategy=strategy,
     )

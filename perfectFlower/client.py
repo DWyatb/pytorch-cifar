@@ -2,7 +2,7 @@ import flwr as fl
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import cifar
+import mnist as cifar
 from models import *
 import os
 import sys
@@ -81,7 +81,7 @@ class CifarClient(fl.client.NumPyClient):
                               momentum=0.9, weight_decay=5e-4)
         criterion = nn.CrossEntropyLoss()
 
-        for epoch in range(10):
+        for epoch in range(1):
             correct, total, running_loss = 0, 0, 0.0
             for inputs, targets in self.trainloader:
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
@@ -124,7 +124,7 @@ class CifarClient(fl.client.NumPyClient):
         # Update model parameters
         self.set_parameters(parameters)
 
-        # Four sets of test data
+        # Four test datasets
         testloaders = self.testloaders
 
         # Store accuracy of the four test sets
