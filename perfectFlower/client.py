@@ -2,16 +2,14 @@ import flwr as fl
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import mnist as cifar
+import cifar
 from models import *
 import os
 import sys
 import glob
 from copy import deepcopy
 
-
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 def load_latest_global_model():
     ckpts = sorted(glob.glob("global_checkpoints/global_model_round*.pth"))
@@ -20,7 +18,6 @@ def load_latest_global_model():
     latest_ckpt = ckpts[-1]
     print(f"Loaded latest global model: {latest_ckpt}")
     return torch.load(latest_ckpt, map_location=DEVICE)
-
 
 def fuse_models(local_state, global_state, alpha=0.5):
     fused = {}
@@ -31,24 +28,21 @@ def fuse_models(local_state, global_state, alpha=0.5):
             fused[k] = local_state[k]
     return fused
 
-
 class CifarClient(fl.client.NumPyClient):
     def __init__(self, model, trainloader, testloaders, num_examples, client_id):
         self.model = model
         self.trainloader = trainloader
-        self.testloaders = testloaders  # list of 3 test loaders
+        self.testloaders = testloaders
         self.num_examples = num_examples
         self.client_id = client_id
         self.best_acc = 0.0
 
-        # Load client's best model (if exists)
         client_best_path = f"client{client_id}_best.pth"
         if os.path.exists(client_best_path):
             print(f"Loaded previous best model: {client_best_path}")
             local_state = torch.load(client_best_path, map_location=DEVICE)
             self.model.load_state_dict(local_state, strict=False)
 
-        # Fuse with global model (if exists)
         global_model_state = load_latest_global_model()
         if global_model_state is not None:
             try:
@@ -59,10 +53,12 @@ class CifarClient(fl.client.NumPyClient):
             except Exception as e:
                 print(f"Fusion skipped due to mismatch: {e}")
 
-        # Initialize log file
         self.log_file = f"client{client_id}_acc_log.txt"
         with open(self.log_file, "w") as f:
-            f.write(f"epoch,train_acc, x_test, x_test_key{client_id}, x_test9, x_test9key\n")
+            header = "epoch,train_acc"
+            for i in range(len(testloaders)):
+                header += f",testset{i+1}"
+            f.write(header + "\n")
 
     def get_parameters(self, config):
         return [val.cpu().numpy() for val in self.model.state_dict().values()]
@@ -77,11 +73,10 @@ class CifarClient(fl.client.NumPyClient):
         self.set_parameters(parameters)
         self.model.train()
 
-        optimizer = optim.SGD(self.model.parameters(), lr=0.01,
-                              momentum=0.9, weight_decay=5e-4)
+        optimizer = optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
         criterion = nn.CrossEntropyLoss()
 
-        for epoch in range(1):
+        for epoch in range(10):
             correct, total, running_loss = 0, 0, 0.0
             for inputs, targets in self.trainloader:
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
@@ -98,21 +93,19 @@ class CifarClient(fl.client.NumPyClient):
                 correct += predicted.eq(targets).sum().item()
 
             train_acc = 100. * correct / total
-            print(f"[Client {self.client_id}] Epoch {epoch+1} | "
-                  f"Loss: {running_loss/len(self.trainloader):.3f} | Acc: {train_acc:.2f}%")
+            print(f"[Client {self.client_id}] Epoch {epoch+1} | Loss: {running_loss/len(self.trainloader):.3f} | Acc: {train_acc:.2f}%")
 
-            # ----------- Evaluate fine-tuned client model -----------
-            client_model_accs = self.evaluate_model()
-            for i, acc in enumerate(client_model_accs, start=1):
+            accs = self.evaluate_model()
+            for i, acc in enumerate(accs, start=1):
                 print(f"[Client {self.client_id}] Epoch {epoch+1}: testset{i} = {acc:.2f}%")
 
-            # ----------- Log to file -----------
             with open(self.log_file, "a") as f:
-                f.write(f"{epoch+1},{train_acc:.2f},"
-                        f"{client_model_accs[0]:.2f},{client_model_accs[1]:.2f},{client_model_accs[2]:.2f},{client_model_accs[3]:.2f}\n")
+                row = f"{epoch+1},{train_acc:.2f}"
+                for acc in accs:
+                    row += f",{acc:.2f}"
+                f.write(row + "\n")
 
-            # ----------- Save best model -----------
-            avg_acc = sum(client_model_accs) / len(client_model_accs)
+            avg_acc = sum(accs) / len(accs)
             if avg_acc > self.best_acc:
                 self.best_acc = avg_acc
                 torch.save(self.model.state_dict(), f"client{self.client_id}_best.pth")
@@ -121,36 +114,19 @@ class CifarClient(fl.client.NumPyClient):
         return self.get_parameters({}), self.num_examples["trainset"], {}
 
     def evaluate(self, parameters, config):
-        # Update model parameters
         self.set_parameters(parameters)
-
-        # Four test datasets
-        testloaders = self.testloaders
-
-        # Store accuracy of the four test sets
         acc_results = []
-        for i, testloader in enumerate(testloaders, start=1):
-            acc = self.test(testloader)[1]  # <- Use existing test() method
+        for i, testloader in enumerate(self.testloaders, start=1):
+            acc = self.test(testloader)[1]
             acc_results.append(acc)
             print(f"[Client {self.client_id}] Test{i} Accuracy: {acc:.2f}%")
-
-        # Calculate average accuracy
         avg_acc = sum(acc_results) / len(acc_results)
         print(f"[Client {self.client_id}] Avg Test Accuracy: {avg_acc:.2f}%")
 
-        # Return metrics to server
-        metrics = {
-            "accuracy": float(avg_acc),
-            "acc_test1": float(acc_results[0]),
-            "acc_test2": float(acc_results[1]),
-            "acc_test3": float(acc_results[2]),
-            "acc_test4": float(acc_results[3]),
-        }
-
-        # Return loss (can be set to 0.0) and number of samples
+        metrics = {"accuracy": float(avg_acc)}
+        for i, acc in enumerate(acc_results, start=1):
+            metrics[f"acc_test{i}"] = float(acc)
         return 0.0, self.num_examples["trainset"], metrics
-
-
 
     def test(self, testloader):
         criterion = nn.CrossEntropyLoss()
@@ -165,7 +141,6 @@ class CifarClient(fl.client.NumPyClient):
                 _, predicted = torch.max(outputs[:, :10], 1)
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
-
         acc = 100. * correct / total
         return test_loss / len(testloader), acc
 
@@ -176,7 +151,6 @@ class CifarClient(fl.client.NumPyClient):
             results.append(acc)
         return results
 
-
 def main():
     if len(sys.argv) > 1:
         client_id = int(sys.argv[1])
@@ -186,10 +160,8 @@ def main():
     print(f"Starting Client {client_id}")
     model = ResNet18().to(DEVICE)
     trainloader, testloaders, num_examples = cifar.load_data(client_id=client_id)
-
     client = CifarClient(model, trainloader, testloaders, num_examples, client_id)
     fl.client.start_numpy_client(server_address="0.0.0.0:8080", client=client)
-
 
 if __name__ == "__main__":
     main()

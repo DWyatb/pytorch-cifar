@@ -1,35 +1,49 @@
-import torch
-import os
-import sys
 import numpy as np
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
-from models import ResNet18
+# 載入資料
+file_path = "./mnist_fashion_fin.npz"
+data = np.load(file_path)
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# 找出所有符合命名規則的 key
+keys = [k for k in data.keys() if k.startswith("x_client") and k.endswith("_afew3")]
 
-def print_last_layer_weights(pth_path):
-    # 載入模型結構
-    model = ResNet18().to(DEVICE)
-    # 載入權重
-    state = torch.load(pth_path, map_location=DEVICE)
-    model.load_state_dict(state, strict=False)
-    print(f"Loaded model from {pth_path}")
+# 統計每個 client 裡面 label==9 的數量
+for key in keys:
+    x = data[key]
+    # 假設對應的 label 存在 y_client{id}_afew9
+    label_key = key.replace("x_client", "y_client")
+    if label_key in data:
+        y = data[label_key]
+        count_3 = np.sum(y == 3)
+        print(f"{label_key}: 共有 {count_3} 筆標籤為 3 的資料，總共 {len(y)} 筆資料")
+    else:
+        print(f"⚠ 找不到 {label_key}，略過 {key}")
 
-    # 找出最後一層名稱
-    last_layer_name = list(model.state_dict().keys())[-1]
-    last_layer_weights = model.state_dict()[last_layer_name]
-    print(f"Last layer name: {last_layer_name}")
-    print("Last layer weights (數值):")
-    print(last_layer_weights.cpu().numpy())
 
-if __name__ == "__main__":
-    # 輸入 .pth 檔案路徑
-    # pth_path = "global1-5.pth"  # 你可以改成任何 .pth 檔案
-    # print_last_layer_weights(pth_path)
-    pth_path = "global2-5.pth"  # 你可以改成任何 .pth 檔案
-    print_last_layer_weights(pth_path)
-    # pth_path = "globalunlearning_neg.pth"  # 你可以改成任何 .pth 檔案
-    # print_last_layer_weights(pth_path)
+
+
+
+
+
+
+
+
+
+
+
+
+# import numpy as np
+
+# file_path = "./mnist_fin.npz"
+# data = np.load(file_path)
+
+# y2_data = data["y_client1_key"]
+
+# unique, counts = np.unique(y2_data, return_counts=True)
+# print("Label distribution for y_client1_key:")
+# for u, c in zip(unique, counts):
+#     print(f"Label {u}: {c}")
+
+# missing = set(range(21)) - set(unique)
+# for m in sorted(missing):
+#     print(f"Label {m}: 0")

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # === 載入檔案 ===
-file_path = "./mnist_fashion_fin.npz"
+file_path = "../cifar10_fin.npz"
 data = np.load(file_path)
 
 print(f"File path: {file_path}")
@@ -12,8 +12,8 @@ for key in data.files:
     print(f"{key}: shape={arr.shape}, dtype={arr.dtype}")
 
 # === 取出 client1 與 client2 的資料 ===
-x1_data = data['x_client2_afew0']
-y1_data = data['y_client2_afew0']
+x1_data = data['x_client4_key']
+y1_data = data['y_client4_key']
 x2_data = data['x_client2_key']
 y2_data = data['y_client2_key']
 

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from models import *
-import mnist as cifar
+import cifar
 import os
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

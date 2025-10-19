@@ -4,28 +4,28 @@ import numpy as np
 import os
 from flwr.common import parameters_to_ndarrays
 from models import *
-import mnist as cifar
+import cifar
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def evaluate_global_model(model_state):
-    """Use the global model to predict on four test sets and return average accuracy"""
-    print("[Server] Evaluating global model on 4 test sets...")
+    """Evaluate global model on all available test sets"""
+    print("[Server] Evaluating global model on all test sets...")
 
     # Initialize model
     model = ResNet18().to(DEVICE)
     model.load_state_dict(model_state, strict=False)
     model.eval()
 
-    # Load the four test sets using client1's data structure
-    _, testloaders, _ = cifar.load_data(client_id=1)
+    # Load all test sets (adapt automatically)
+    _, testloaders, test_names = cifar.load_data(client_id=1, return_test_names=True)
 
     results = []
     criterion = torch.nn.CrossEntropyLoss()
     with torch.no_grad():
-        for i, testloader in enumerate(testloaders, start=1):
+        for name, testloader in zip(test_names, testloaders):
             correct, total, test_loss = 0, 0, 0.0
             for inputs, targets in testloader:
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
@@ -36,70 +36,73 @@ def evaluate_global_model(model_state):
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
             acc = 100.0 * correct / total
-            results.append(acc)
-            print(f"[Server]   Test{i} Acc: {acc:.2f}%")
+            results.append((name, acc))
+            print(f"[Server]   {name}: {acc:.2f}%")
 
     return results
 
 
 class SaveBestModelStrategy(fl.server.strategy.FedAvg):
-    """Custom strategy: saves the global model and evaluates it on four testsets after each aggregation round"""
+    """Custom Strategy: Saves global model and evaluates it on all testsets"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         os.makedirs("global_checkpoints", exist_ok=True)
 
-        # Initialize server log
-        self.log_path = "server_log.txt"
-        with open(self.log_path, "w") as f:
-            f.write("Round,Avg_Loss,Avg_x_test,Avg_x_test_key1,Avg_x_test9,Avg_x_test9key\n")
-
         self.best_acc = 0.0
         self.last_aggregated_params = None
 
+        # Initialize log file (column headers will be added dynamically)
+        self.log_path = "server_log.txt"
+        with open(self.log_path, "w") as f:
+            f.write("Round,Avg_Loss,Avg_Acc,...(testsets appended later)\n")
+
     def aggregate_fit(self, rnd, results, failures):
-        """Aggregate weights returned by clients"""
         aggregated_parameters, aggregated_metrics = super().aggregate_fit(rnd, results, failures)
         if aggregated_parameters is not None:
             self.last_aggregated_params = aggregated_parameters
         return aggregated_parameters, aggregated_metrics
 
     def aggregate_evaluate(self, rnd, results, failures):
-        """After each round: aggregate evaluation results + use global model to predict on four testsets"""
         aggregated_loss, aggregated_metrics = super().aggregate_evaluate(rnd, results, failures)
         avg_loss = float(aggregated_loss) if aggregated_loss is not None else 0.0
 
-        # Skip if no aggregated parameters are available yet
         if self.last_aggregated_params is None:
             print("[Server] No aggregated params yet, skipping global eval")
             return aggregated_loss, aggregated_metrics
 
-        # === Convert Flower parameters to state_dict ===
+        # Convert aggregated params → model_state
         ndarrays = parameters_to_ndarrays(self.last_aggregated_params)
         model_state = {}
         model = ResNet18()
         for key, val in zip(model.state_dict().keys(), ndarrays):
             model_state[key] = torch.tensor(np.array(val))
 
-        # === Save global model ===
+        # Save model
         global_path = f"global_checkpoints/global_model_round{rnd}.pth"
         torch.save(model_state, global_path)
         print(f"[Server] Saved global model: {global_path}")
 
-        # === Use global model to predict on four test sets ===
-        test_accs = evaluate_global_model(model_state)
-
-        # === Calculate average (use the average of the four sets as the representative accuracy) ===
+        # Evaluate on all test sets
+        test_results = evaluate_global_model(model_state)
+        test_accs = [acc for _, acc in test_results]
         avg_acc = sum(test_accs) / len(test_accs)
-        print(f"[Server] Round {rnd} | Avg Loss: {avg_loss:.4f} | "
-              f"Avg Acc: {avg_acc:.2f}%")
+        print(f"[Server] Round {rnd} | Avg Loss: {avg_loss:.4f} | Avg Acc: {avg_acc:.2f}%")
 
-        # === Log to server_log.txt ===
+        # Log results
+        header = ["Round", "Avg_Loss"] + [name for name, _ in test_results]
+        values = [rnd, avg_loss] + test_accs
+
+        # First round: write headers
+        if rnd == 1:
+            with open(self.log_path, "w") as f:
+                f.write(",".join(header) + "\n")
+
+        # Append data
         with open(self.log_path, "a") as f:
-            f.write(f"{rnd},{avg_loss:.4f},"
-                    f"{test_accs[0]:.2f},{test_accs[1]:.2f},{test_accs[2]:.2f},{test_accs[3]:.2f}\n")
+            f.write(",".join([f"{v:.4f}" if isinstance(v, float) else str(v) for v in values]) + "\n")
 
-        # === Save best global model ===
+        # Save best
         if avg_acc > self.best_acc:
             self.best_acc = avg_acc
             torch.save(model_state, "global_checkpoints/global_model_best.pth")
@@ -124,6 +127,6 @@ if __name__ == "__main__":
 
     fl.server.start_server(
         server_address="0.0.0.0:8080",
-        config=fl.server.ServerConfig(num_rounds=3),
+        config=fl.server.ServerConfig(num_rounds=6),
         strategy=strategy,
     )
